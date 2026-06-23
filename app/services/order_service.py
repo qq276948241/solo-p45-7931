@@ -20,6 +20,18 @@ def _count_overlapping_orders(db: Session, cage_type: CageType, check_in: dateti
     return query.count()
 
 
+def _has_pet_conflict(db: Session, pet_id: int, check_in: datetime, check_out: datetime, exclude_order_id: Optional[int] = None) -> bool:
+    query = db.query(Order).filter(
+        Order.pet_id == pet_id,
+        Order.status != OrderStatus.checked_out,
+        Order.check_in < check_out,
+        (Order.check_out == None) | (Order.check_out > check_in),
+    )
+    if exclude_order_id is not None:
+        query = query.filter(Order.id != exclude_order_id)
+    return query.first() is not None
+
+
 def _create_billing_for_order(db: Session, order: Order) -> None:
     if order.status != OrderStatus.checked_out or not order.check_out:
         return
@@ -33,7 +45,7 @@ def _create_billing_for_order(db: Session, order: Order) -> None:
 
 def _promote_next_waitlist(db: Session, cage_type: CageType, check_in: datetime, check_out: Optional[datetime]) -> Optional[Order]:
     effective_check_out = check_out or check_in
-    waitlist_entry = (
+    candidates = (
         db.query(Waitlist)
         .filter(
             Waitlist.cage_type == cage_type,
@@ -41,23 +53,29 @@ def _promote_next_waitlist(db: Session, cage_type: CageType, check_in: datetime,
             Waitlist.check_out > check_in,
         )
         .order_by(Waitlist.created_at.asc())
-        .first()
+        .all()
     )
-    if not waitlist_entry:
-        return None
-    order = Order(
-        pet_id=waitlist_entry.pet_id,
-        cage_type=waitlist_entry.cage_type,
-        check_in=waitlist_entry.check_in,
-        check_out=waitlist_entry.check_out,
-        status=OrderStatus.reserved,
-    )
-    db.add(order)
-    db.delete(waitlist_entry)
-    db.commit()
-    db.refresh(order)
-    _create_billing_for_order(db, order)
-    return order
+    promoted_pet_ids = set()
+    for entry in candidates:
+        if entry.pet_id in promoted_pet_ids:
+            continue
+        if _has_pet_conflict(db, entry.pet_id, entry.check_in, entry.check_out):
+            continue
+        order = Order(
+            pet_id=entry.pet_id,
+            cage_type=entry.cage_type,
+            check_in=entry.check_in,
+            check_out=entry.check_out,
+            status=OrderStatus.reserved,
+        )
+        db.add(order)
+        db.delete(entry)
+        db.commit()
+        db.refresh(order)
+        _create_billing_for_order(db, order)
+        promoted_pet_ids.add(entry.pet_id)
+        return order
+    return None
 
 
 def create_order(db: Session, data: OrderCreate) -> OrderCreateResult:
@@ -68,6 +86,8 @@ def create_order(db: Session, data: OrderCreate) -> OrderCreateResult:
         raise HTTPException(status_code=400, detail="离店时间必须晚于入住时间")
     check_out = data.check_out
     effective_check_out = check_out or data.check_in
+    if check_out and _has_pet_conflict(db, data.pet_id, data.check_in, check_out):
+        raise HTTPException(status_code=400, detail="该宠物该时段已有预约")
     capacity = get_cage_capacity(data.cage_type.value)
     occupied = _count_overlapping_orders(db, data.cage_type, data.check_in, effective_check_out)
     if occupied >= capacity:
@@ -116,9 +136,12 @@ def update_order(db: Session, order_id: int, data: OrderUpdate) -> Order:
     new_check_in = update_data.get("check_in", order.check_in)
     new_check_out = update_data.get("check_out", order.check_out)
     new_cage_type = update_data.get("cage_type", order.cage_type)
+    new_pet_id = update_data.get("pet_id", order.pet_id)
     if new_check_out and new_check_out <= new_check_in:
         raise HTTPException(status_code=400, detail="离店时间必须晚于入住时间")
     effective_check_out = new_check_out or new_check_in
+    if new_check_out and _has_pet_conflict(db, new_pet_id, new_check_in, new_check_out, exclude_order_id=order_id):
+        raise HTTPException(status_code=400, detail="该宠物该时段已有预约")
     capacity = get_cage_capacity(new_cage_type.value)
     occupied = _count_overlapping_orders(db, new_cage_type, new_check_in, effective_check_out, exclude_order_id=order_id)
     if occupied >= capacity:
@@ -137,6 +160,8 @@ def add_to_waitlist(db: Session, data: WaitlistCreate) -> Waitlist:
         raise HTTPException(status_code=404, detail="宠物不存在")
     if data.check_out <= data.check_in:
         raise HTTPException(status_code=400, detail="离店时间必须晚于入住时间")
+    if _has_pet_conflict(db, data.pet_id, data.check_in, data.check_out):
+        raise HTTPException(status_code=400, detail="该宠物该时段已有预约")
     waitlist_entry = Waitlist(**data.model_dump())
     db.add(waitlist_entry)
     db.commit()
