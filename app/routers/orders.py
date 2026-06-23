@@ -37,21 +37,6 @@ def list_staying_pets(
     return order_service.list_staying_orders(db, date)
 
 
-@router.get("/{order_id}", response_model=OrderOut)
-def get_order(order_id: int, db: Session = Depends(get_db)):
-    return order_service.get_order(db, order_id)
-
-
-@router.put("/{order_id}", response_model=OrderOut)
-def update_order(order_id: int, data: OrderUpdate, db: Session = Depends(get_db)):
-    return order_service.update_order(db, order_id, data)
-
-
-@router.delete("/{order_id}", status_code=204)
-def cancel_order(order_id: int, db: Session = Depends(get_db)):
-    order_service.cancel_order(db, order_id)
-
-
 @router.post("/waitlist", response_model=WaitlistOut, status_code=201)
 def add_waitlist(data: WaitlistCreate, db: Session = Depends(get_db)):
     return order_service.add_to_waitlist(db, data)
@@ -73,3 +58,18 @@ def get_waitlist_position(waitlist_id: int, db: Session = Depends(get_db)):
 @router.delete("/waitlist/{waitlist_id}", status_code=204)
 def remove_waitlist(waitlist_id: int, db: Session = Depends(get_db)):
     order_service.remove_from_waitlist(db, waitlist_id)
+
+
+@router.get("/{order_id}", response_model=OrderOut)
+def get_order(order_id: int, db: Session = Depends(get_db)):
+    return order_service.get_order(db, order_id)
+
+
+@router.put("/{order_id}", response_model=OrderOut)
+def update_order(order_id: int, data: OrderUpdate, db: Session = Depends(get_db)):
+    return order_service.update_order(db, order_id, data)
+
+
+@router.delete("/{order_id}", status_code=204)
+def cancel_order(order_id: int, db: Session = Depends(get_db)):
+    order_service.cancel_order(db, order_id)
