@@ -1,4 +1,5 @@
 import enum
+from datetime import datetime
 from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Enum, Boolean
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -39,6 +40,7 @@ class Pet(Base):
 
     owner = relationship("Customer", back_populates="pets")
     orders = relationship("Order", back_populates="pet")
+    waitlist_entries = relationship("Waitlist", back_populates="pet")
 
 
 class Order(Base):
@@ -65,3 +67,16 @@ class Billing(Base):
     is_paid = Column(Boolean, nullable=False, default=False)
 
     order = relationship("Order", back_populates="billing")
+
+
+class Waitlist(Base):
+    __tablename__ = "waitlist"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pet_id = Column(Integer, ForeignKey("pets.id"), nullable=False)
+    cage_type = Column(Enum(CageType), nullable=False)
+    check_in = Column(DateTime, nullable=False)
+    check_out = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    pet = relationship("Pet", back_populates="waitlist_entries")

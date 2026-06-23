@@ -102,3 +102,36 @@ class MonthlyRevenue(BaseModel):
     paid_amount: float
     unpaid_amount: float
     order_count: int
+
+
+class WaitlistCreate(BaseModel):
+    pet_id: int
+    cage_type: CageType
+    check_in: datetime
+    check_out: datetime
+
+
+class WaitlistOut(BaseModel):
+    id: int
+    pet_id: int
+    cage_type: CageType
+    check_in: datetime
+    check_out: datetime
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class WaitlistPosition(BaseModel):
+    waitlist_id: int
+    pet_id: int
+    position: int
+    cage_type: CageType
+    check_in: datetime
+    check_out: datetime
+
+
+class OrderCreateResult(BaseModel):
+    order: Optional[OrderOut] = None
+    waitlist: Optional[WaitlistOut] = None
+    message: str
